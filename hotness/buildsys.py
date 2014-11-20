@@ -69,7 +69,7 @@ class Koji(object):
         if out:
             self.log.debug(out)
         if err:
-            self.log.error(err)
+            self.log.warning(err)
         if p.returncode != 0:
             self.log.error('return code %s', p.returncode)
             raise Exception
@@ -101,10 +101,13 @@ class Koji(object):
                 specfile,
             ]
             output = self.run(cmd)
-            output = self.run(['spectool', '-g', specfile], cwd=tmp)
-            output = self.run(['fedpkg', 'srpm'], cwd=tmp)
 
-            srpm = output.strip().split()[-1]
+            # For these to work, it requires that rpmmacros be redefined to
+            # find source files in the tmp directory.  See:  http://da.gd/1MWt
+            output = self.run(['spectool', '-g', specfile], cwd=tmp)
+            output = self.run(['rpmbuild', '-bs', specfile], cwd=tmp)
+
+            srpm = os.path.join(tmp, output.strip().split()[-1])
             self.log.debug("Got srpm %r" % srpm)
 
             session = self.session_maker()
