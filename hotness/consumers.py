@@ -19,11 +19,11 @@ Authors:    Ralph Bean <rbean@redhat.com>
 
 """
 
-import copy
 import socket
 
 import fedmsg
 import fedmsg.consumers
+import requests
 
 import hotness.buildsys
 import hotness.bz
@@ -73,13 +73,18 @@ class BugzillaTicketFiler(fedmsg.consumers.FedmsgConsumer):
         self.buildsys = hotness.buildsys.Koji(
             consumer=self, config=self.config['hotness.koji'])
 
+        default = 'https://admin.fedoraproject.org/pkgdb/api'
+        self.pkgdb_url = self.config.get('hotness.pkgdb_url', default)
+
         # Also, set up our global cache object.
         self.log.info("Configuring cache.")
         with hotness.cache.cache_lock:
             if not hasattr(hotness.cache.cache, 'backend'):
                 hotness.cache.cache.configure(**self.config['hotness.cache'])
 
-        self.repoid = self.config.get('hotness.repoid')
+        self.yumconfig = self.config.get('hotness.yumconfig')
+        self.log.info("Using hotness.yumconfig=%r" % self.yumconfig)
+        self.repoid = self.config.get('hotness.repoid', 'rawhide')
         self.log.info("Using hotness.repoid=%r" % self.repoid)
         self.distro = self.config.get('hotness.distro', 'Fedora')
         self.log.info("Using hotness.distro=%r" % self.distro)
@@ -123,9 +128,15 @@ class BugzillaTicketFiler(fedmsg.consumers.FedmsgConsumer):
         package = mappings['Fedora']
         url = msg['msg']['project']['homepage']
 
+        # Is it something that we're being asked not to act on:
+        if not self.is_monitored(package):
+            self.log.info("Pkgdb says not to monitor %r.  Dropping." % package)
+            return
+
         # Is it new to us?
-        version, release = hotness.repository.get_version(package, self.repoid)
-        upstream = msg['msg']['upstream_version']
+        fname = self.yumconfig
+        version, release = hotness.repository.get_version(package, fname)
+        upstream = inner['upstream_version']
         self.log.info("Comparing upstream %s against repo %s-%s" % (
             upstream, version, release))
         diff = hotness.helpers.cmp_upstream_repo(upstream, (version, release))
@@ -165,3 +176,22 @@ class BugzillaTicketFiler(fedmsg.consumers.FedmsgConsumer):
         bug = self.triggered_task_ids.pop(task_id)
         url = self.buildsys.url_for(task_id)
         self.bugzilla.follow_up(url, state, bug)
+
+    def is_monitored(self, package):
+        """ Returns True if a package is marked as 'monitored' in pkgdb2. """
+
+        url = '{0}/package/{1}'.format(self.pkgdb_url, package)
+        self.log.info("Checking %r" % url)
+        r = requests.get(url)
+
+        if not r.status_code == 200:
+            self.log.warning('URL %s returned code %s', r.url, r.status_code)
+            return False
+
+        try:
+            data = r.json()
+            package = data['packages'][0]
+            return package['package'].get('monitor', True)
+        except:
+            self.log.exception("Problem interacting with pkgdb.")
+            return False
