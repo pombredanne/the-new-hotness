@@ -35,23 +35,23 @@ import hotness.repository
 class BugzillaTicketFiler(fedmsg.consumers.FedmsgConsumer):
 
 
-    # Moksha *should* be able to handle a list of topics, but it lost that
-    # somewhere along the way.  We'll need to patch it to get that back.
-    #topic = [
-    #    # This is the real production topic
-    #    # topic = 'org.release-monitoring.prod.anitya.project.version.update'
+    # We can do multiple topics like this as of moksha.hub-1.4.4
+    # https://github.com/mokshaproject/moksha/pull/25
+    topic = [
+        # This is the real production topic
+        'org.release-monitoring.prod.anitya.project.version.update',
 
-    #    # For development, I am using this so I can test with this command:
-    #    # $ fedmsg-dg-replay --msg-id 2014-77ff95ff-3373-4926-bf23-bf0754b0925c
-    #    'org.fedoraproject.dev.anitya.project.version.update',
+        # For development, I use this so I can test with this command:
+        # $ fedmsg-dg-replay --msg-id 2014-77ff95ff-3373-4926-bf23-bf0754b0925c
+        #'org.fedoraproject.dev.anitya.project.version.update',
 
-    #    # Anyways, we also listen for koji scratch builds to circle back:
-    #    'org.fedoraproject.prod.buildsys.task.state.change',
-    #]
+        # Anyways, we also listen for koji scratch builds to circle back:
+        'org.fedoraproject.prod.buildsys.task.state.change',
 
-    # In the meantime, just subscribe to all messages and throw away the ones
-    # we don't want.
-    topic = '*'
+        # Furthermore, we look for official builds and also circle back
+        # and comment about those (when they succeed).
+        'org.fedoraproject.prod.buildsys.build.state.change',
+    ]
 
     config_key = 'hotness.bugzilla.enabled'
 
@@ -67,6 +67,7 @@ class BugzillaTicketFiler(fedmsg.consumers.FedmsgConsumer):
         # First, initialize fedmsg and bugzilla in this thread's context.
         hostname = socket.gethostname().split('.', 1)[0]
         fedmsg.init(name='hotness.%s' % hostname)
+        fedmsg.meta.make_processors(**self.hub.config)
 
         self.bugzilla = hotness.bz.Bugzilla(
             consumer=self, config=self.config['hotness.bugzilla'])
@@ -107,7 +108,9 @@ class BugzillaTicketFiler(fedmsg.consumers.FedmsgConsumer):
         if topic.endswith('anitya.project.version.update'):
             self.handle_anitya(msg)
         elif topic.endswith('buildsys.task.state.change'):
-            self.handle_buildsys(msg)
+            self.handle_buildsys_scratch(msg)
+        elif topic.endswith('buildsys.build.state.change'):
+            self.handle_buildsys_real(msg)
         else:
             self.log.debug("Dropping %r %r" % (topic, msg['msg_id']))
             pass
@@ -164,17 +167,21 @@ class BugzillaTicketFiler(fedmsg.consumers.FedmsgConsumer):
             # Map that koji task_id to the bz ticket we want to follow up on
             self.triggered_task_ids[task_id] = bz
 
-    def handle_buildsys(self, msg):
+    def handle_buildsys_scratch(self, msg):
         # Is this a scratch build that we triggered a couple minutes ago?
         task_id = msg['msg']['info']['id']
         if task_id not in self.triggered_task_ids:
             self.log.debug("Koji task_id=%r is not ours.  Drop it." % task_id)
             return
 
-        self.log.info("Handling koji msg %r" % msg.get('msg_id', None))
+        self.log.info("Handling koji scratch msg %r" % msg.get('msg_id', None))
 
         # see koji.TASK_STATES for all values
-        done_states = ['FAILED', 'CANCELED', 'CLOSED']
+        done_states = {
+            'CLOSED': 'succeeded',
+            'FAILED': 'failed',
+            'CANCELLED': 'canceled',
+        }
         state = msg['msg']['new']
         self.log.info("Heard word that our task %r is %r." % (task_id, state))
         if state not in done_states:
@@ -182,9 +189,48 @@ class BugzillaTicketFiler(fedmsg.consumers.FedmsgConsumer):
 
         bug = self.triggered_task_ids.pop(task_id)
         url = self.buildsys.url_for(task_id)
-        self.bugzilla.follow_up(url, state, bug)
+
+        text = "Scratch build %s %s" % (done_states.get(state, state), url)
+
+        self.bugzilla.follow_up(text, bug)
         self.publish("update.bug.followup", msg=dict(
-            trigger=msg, bug=dict(bug_id=bz.bug_id)))
+            trigger=msg, bug=dict(bug_id=bug.bug_id)))
+
+    def handle_buildsys_real(self, msg):
+        idx = msg['msg']['build_id']
+        state = msg['msg']['new']
+        instance = msg['msg']['instance']
+
+        if instance != 'primary':
+            self.log.debug("Ignoring secondary arch build...")
+            return
+
+        if state != 1:
+            self.log.debug("Koji build_id=%r is not complete.  Drop it." % idx)
+            return
+
+        package = msg['msg']['name']
+        version = msg['msg']['version']
+        release = msg['msg']['release']
+
+        if not self.is_monitored(package):
+            self.log.debug('%r not monitored, dropping koji build' % package)
+            return
+
+        self.log.info("Handling koji build msg %r" % msg.get('msg_id', None))
+        bug = self.bugzilla.exact_bug(name=package, upstream=version)
+        if not bug:
+            self.log.info("No bug found for %s-%s.%s, dropping message." % (
+                package, version, release))
+            return
+
+        url = fedmsg.meta.msg2link(msg, **self.hub.config)
+        subtitle = fedmsg.meta.msg2subtitle(msg, **self.hub.config)
+        text = "%s %s" % (subtitle, url)
+
+        self.bugzilla.follow_up(text, bug)
+        self.publish("update.bug.followup", msg=dict(
+            trigger=msg, bug=dict(bug_id=bug.bug_id)))
 
     def is_monitored(self, package):
         """ Returns True if a package is marked as 'monitored' in pkgdb2. """
