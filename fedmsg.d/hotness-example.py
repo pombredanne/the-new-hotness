@@ -17,6 +17,15 @@ https://fedoraproject.org/wiki/Updates_Policy
 More information about the service that created this bug can be found at:
 
 %(explanation_url)s
+
+
+Please keep in mind that with any upstream change, there may also be packaging
+changes that need to be made. Specifically, please remember that it is your
+responsibility to review the new version to ensure that the licensing is still
+correct and that no non-free or legally problematic items have been added
+upstream.
+
+Based on the information from anitya: https://release-monitoring.org/project/%(projectid)s/
 """
 
 config = {
@@ -40,12 +49,18 @@ config = {
         'weburl': 'http://koji.fedoraproject.org/koji',
         'cert': os.path.expanduser('~/.fedora.cert'),
         'ca_cert': os.path.expanduser('~/.fedora-server-ca.cert'),
-        'git_url': 'http://pkgs.fedoraproject.org/cgit/{package}.git',
-        'userstring': ('Fedora Release Monitoring '
-                       '<release-monitoring@fedoraproject.org>'),
+        'git_url': 'http://pkgs.fedoraproject.org/cgit/rpms/{package}.git',
+        'userstring': ('Upstream Monitor',
+                       '<upstream-release-monitoring@fedoraproject.org>'),
         'opts': {'scratch': True},
         'priority': 30,
         'target_tag': 'rawhide',
+
+        # These are errors that we won't scream about.
+        'passable_errors': [
+            # This is the packager's problem, not ours.
+            'unclosed macro or bad line continuation',
+        ],
     },
 
     'hotness.anitya': {
@@ -56,6 +71,7 @@ config = {
 
     'hotness.pkgdb_url': 'https://admin.fedoraproject.org/pkgdb/api',
 
+    'hotness.pkg_manager': 'dnf',
     'hotness.yumconfig': './yum-config',
 
     "hotness.cache": {

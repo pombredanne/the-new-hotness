@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='the-new-hotness',
-    version='0.2.2',
+    version='0.7.3',
     description='Consume anitya fedmsg messages to file bugzilla bugs',
     license='LGPLv2+',
     author='Ralph Bean',
@@ -14,6 +14,7 @@ setup(
         "dogpile.cache",
         "requests",
         "sh",
+        "six",
         "fedmsg_meta_fedora_infrastructure",
     ],
     packages=find_packages(),

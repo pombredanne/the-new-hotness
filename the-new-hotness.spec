@@ -9,7 +9,7 @@
 %global modname the-new-hotness
 
 Name:               the-new-hotness
-Version:            0.2.2
+Version:            0.7.3
 Release:            1%{?dist}
 Summary:            Consume anitya fedmsg messages to file bugzilla bugs
 
@@ -26,11 +26,14 @@ BuildRequires:      python-bugzilla
 BuildRequires:      python-dogpile-cache
 BuildRequires:      fedmsg
 BuildRequires:      python-fedmsg-meta-fedora-infrastructure
+BuildRequires:      python-six
 
 Requires:           python-bugzilla
 Requires:           python-dogpile-cache
 Requires:           fedmsg
 Requires:           python-fedmsg-meta-fedora-infrastructure
+Requires:           python-six
+Requires:           rebase-helper
 
 %description
 Fedmsg consumer that listens to release-monitoring.org and files bugzilla bugs
@@ -48,6 +51,9 @@ rm -rf %{modname}.egg-info
 %install
 %{__python2} setup.py install -O1 --skip-build --root=%{buildroot}
 
+# setuptools installs these, but we don't want them.
+rm -rf %{buildroot}%{python2_sitelib}/tests/
+
 %files
 %doc README.rst
 %license LICENSE
@@ -55,6 +61,60 @@ rm -rf %{modname}.egg-info
 %{python2_sitelib}/the_new_hotness-%{version}*
 
 %changelog
+* Wed Apr 06 2016 Ralph Bean <rbean@redhat.com> - 0.7.3-1
+- new version
+
+* Tue Mar 08 2016 Ralph Bean <rbean@redhat.com> - 0.7.2-1
+- new version
+
+* Tue Mar 01 2016 Ralph Bean <rbean@redhat.com> - 0.7.1-1
+- new version
+
+* Mon Feb 29 2016 Ralph Bean <rbean@redhat.com> - 0.7.0-1
+- new version
+
+* Tue Nov 24 2015 Ralph Bean <rbean@redhat.com> - 0.6.4-1
+- new version
+
+* Fri Oct 09 2015 Ralph Bean <rbean@redhat.com> - 0.6.3-1
+- new version
+
+* Thu Oct 01 2015 Ralph Bean <rbean@redhat.com> - 0.6.2-1
+- new version
+
+* Fri Sep 25 2015 Ralph Bean <rbean@redhat.com> - 0.6.1-1
+- new version
+
+* Thu Sep 24 2015 Ralph Bean <rbean@redhat.com> - 0.6.0-1
+- new version
+
+* Fri Jun 05 2015 Ralph Bean <rbean@redhat.com> - 0.5.0-1
+- new version
+
+* Tue Apr 07 2015 Ralph Bean <rbean@redhat.com> - 0.4.1-1
+- Small bump to the get the GitHub name right for anitya.
+
+* Sat Mar 28 2015 Ralph Bean <rbean@redhat.com> - 0.4.0-1
+- Map in anitya when monitoring flag is toggled.
+- File bugs when newly mapped in anitya.
+- Send patches to bugzilla.
+- Comment on the bug when we failed to kick off a scratch build.
+- Publish fedmsg messages about errors instead of emailing hapless admins.
+
+* Tue Feb 24 2015 Ralph Bean <rbean@redhat.com> - 0.3.3-1
+- Improved changelog format.
+- Provide correct information when mapping new github backends.
+
+* Sat Feb 21 2015 Ralph Bean <rbean@redhat.com> - 0.3.2-1
+- Improved logging
+- Only followup on rawhide builds.
+
+* Tue Feb 17 2015 Ralph Bean <rbean@redhat.com> - 0.3.1-1
+- Minor bugfix to rawhide build followup.
+
+* Thu Jan 29 2015 Ralph Bean <rbean@redhat.com> - 0.3.0-1
+- new version
+
 * Mon Jan 12 2015 Ralph Bean <rbean@redhat.com> - 0.2.2-1
 - Latest upstream.
 
